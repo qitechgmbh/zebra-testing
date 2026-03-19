@@ -17,9 +17,9 @@ fn main() {
         send_requests(&sock_tx, &cmds);
 
         // Gather replies
-        let (total_weight, _) = collect_responses(&sock_rx, &device_ids);
+        let (total_weight, count) = collect_responses(&sock_rx, &device_ids);
 
-        println!("Data: {:?}", total_weight);
+        println!("Data: {:?} | {:?}", total_weight, count);
 
         std::thread::sleep(Duration::from_millis(300));
     }
@@ -69,11 +69,13 @@ fn collect_responses(sock_rx: &UdpSocket, device_ids: &[u8]) -> (f64, usize)
 
     while start.elapsed() < timeout && received_count < device_ids.len() {
         match sock_rx.recv(&mut buf) {
-            std::result::Result::Ok(n) => {
+            Ok(n) => {
                 if let Some((id, weight)) = parse_response(&buf[..n]) {
                     println!("Received weight {weight} from ID {id}");
                     total_weight += weight;
                     received_count += 1;
+                } else {
+                    println!("Failed to parse response...");
                 }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
