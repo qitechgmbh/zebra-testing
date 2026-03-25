@@ -88,8 +88,10 @@ impl WorkorderService
             return Ok(());
         } 
 
-        let maybe_response = self.poll_response(&mut client)?;
+        let result_maybe_response = self.poll_response(&mut client);
         self.client = Some(client);
+
+        let maybe_response = result_maybe_response?;
 
         let Some(response) = maybe_response else {
             return Ok(());
