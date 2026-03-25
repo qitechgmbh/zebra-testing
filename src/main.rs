@@ -37,6 +37,8 @@ fn main() {
     let config_path = "/home/qitech/config.json";
     service.connect(config_path).expect("Connection Failed");
 
+    let mut last = Instant::now();
+
     loop {
         send_requests(&sock_tx, &cmds);
 
@@ -45,8 +47,11 @@ fn main() {
         let w0 = opt_to_string(weight_0);
         let w1 = opt_to_string(weight_1);
 
-        println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
-        println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
+        if Instant::now().duration_since(last) > Duration::from_millis(1000) {
+            println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
+            println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
+            last = Instant::now();
+        }
 
         // Write to file
         writeln!(file, "{} | {} : count({})", w0, w1, plate_counter).expect("failed to write");

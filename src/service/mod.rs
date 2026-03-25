@@ -223,28 +223,4 @@ impl WorkorderService
 
         Ok(())
     }
-
-    fn poll_response(&mut self,) -> anyhow::Result<Option<Response>> {
-
-        let Some(mut client) = self.client.take() else {
-            return Ok(None);
-        };
-
-        if !client.has_pending_request() {
-            self.client = Some(client);
-            return Ok(None);
-        } 
-
-        let result = client.poll_response();
-
-        match result {
-            Ok(v) => Ok(Some(v)),
-            Err(e) => {
-                match e {
-                    ProxyTransactionError::Pending => Ok(None),
-                    e => Err(anyhow!("PollResponseErr: {:?}", e)) 
-                }
-            },
-        }
-    }
 }
