@@ -1,8 +1,13 @@
-use std::{fmt::format, fs::OpenOptions, net::UdpSocket, time::{Duration, Instant}};
+use std::{fs::OpenOptions, net::UdpSocket, time::{Duration, Instant}};
 use std::io::Write;
 
 mod xtrem;
 use xtrem::*;
+
+mod service;
+
+mod plate_task;
+use plate_task::PlateDetectTask;
 
 fn main() {
     let (sock_rx, sock_tx) = setup_sockets(5555, "192.168.4.255:4444");
@@ -20,6 +25,10 @@ fn main() {
         .open("weights.csv")
         .expect("failed to open file");
 
+    let mut plate_counter: u32 = 0;
+
+    let mut task = PlateDetectTask::new();
+
     loop {
         send_requests(&sock_tx, &cmds);
 
@@ -28,12 +37,23 @@ fn main() {
         let w0 = opt_to_string(weight_0);
         let w1 = opt_to_string(weight_1);
 
-        println!("Data: {} | {}", w0, w1);
+        println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
 
         // Write to file
-        writeln!(file, "{} | {}", w0, w1).expect("failed to write");
+        writeln!(file, "{} | {} : count({})", w0, w1, plate_counter).expect("failed to write");
 
-        std::thread::sleep(Duration::from_millis(300));
+        if weight_0.is_some() && weight_1.is_some() {
+            let total_weight = weight_0.unwrap() + weight_1.unwrap();
+
+            if task.check(total_weight) {
+                plate_counter += 1;
+            }
+        } else {
+            plate_counter = 0;
+            task.reset();
+        }
+
+        std::thread::sleep(Duration::from_secs_f64(1.0 / 12.0));
     }
 }
 
@@ -81,7 +101,7 @@ fn send_requests(sock_tx: &UdpSocket, cmds: &[Vec<u8>]) {
 fn collect_data(sock_rx: &UdpSocket) -> (Option<f64>, Option<f64>)
 {
     let start = Instant::now();
-    let timeout = Duration::from_millis(300);
+    let timeout = Duration::from_millis(100);
 
     let mut buf = [0u8; 2048];
 
@@ -95,6 +115,7 @@ fn collect_data(sock_rx: &UdpSocket) -> (Option<f64>, Option<f64>)
                     _ = id;
                     if weight_0.is_some() {
                         weight_1 = Some(weight);
+                        break;
                     } else {
                         weight_0 = Some(weight);
                     }
