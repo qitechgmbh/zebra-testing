@@ -204,6 +204,10 @@ impl WorkorderService
                 };
 
                 let data = StateTwoData { state_one_data, personnel_id, quantity_scrap };
+
+                println!("Final data: {:?}", data);
+                panic!("Order completed");
+
                 State::Two(data)
             },
             Two(state_two_data) => {
