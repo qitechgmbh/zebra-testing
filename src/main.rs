@@ -1,4 +1,5 @@
-use std::{net::UdpSocket, time::{Duration, Instant}};
+use std::{fs::OpenOptions, net::UdpSocket, time::{Duration, Instant}};
+use std::io::Write;
 
 mod xtrem;
 use xtrem::*;
@@ -12,16 +13,38 @@ fn main() {
         .map(|&id| build_request(id))
         .collect();
 
+    // Open file once (append mode)
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("weights.csv")
+        .expect("failed to open file");
+
     loop {
-        // Send requests
         send_requests(&sock_tx, &cmds);
 
-        // Gather replies
-        let (total_weight, count) = collect_responses(&sock_rx, &device_ids);
+        let (weight_0, weight_1) = collect_data(&sock_rx);
 
-        println!("Data: {:?} | {:?}", total_weight, count);
+        println!("Data: {:?} | {:?}", weight_0, weight_1);
+
+        // Write to file
+        writeln!(
+            file,
+            "{}, {}",
+            opt_to_string(weight_0),
+            opt_to_string(weight_1)
+        )
+        .expect("failed to write");
 
         std::thread::sleep(Duration::from_millis(300));
+    }
+}
+
+// Helper to format Option<f32>
+fn opt_to_string(v: Option<f64>) -> String {
+    match v {
+        Some(x) => x.to_string(),
+        None => "None".to_string(), // or "NaN"
     }
 }
 
@@ -58,22 +81,28 @@ fn send_requests(sock_tx: &UdpSocket, cmds: &[Vec<u8>]) {
     }
 }
 
-fn collect_responses(sock_rx: &UdpSocket, device_ids: &[u8]) -> (f64, usize)
+fn collect_data(sock_rx: &UdpSocket) -> (Option<f64>, Option<f64>)
 {
     let start = Instant::now();
     let timeout = Duration::from_millis(300);
 
     let mut buf = [0u8; 2048];
-    let mut total_weight = 0.0;
-    let mut received_count = 0;
 
-    while start.elapsed() < timeout && received_count < device_ids.len() {
+    let mut weight_0: Option<f64> = None;
+    let mut weight_1: Option<f64> = None;
+
+    while start.elapsed() < timeout {
         match sock_rx.recv(&mut buf) {
             Ok(n) => {
                 if let Some((id, weight)) = parse_response(&buf[..n]) {
                     println!("Received weight {weight} from ID {id}");
-                    total_weight += weight;
-                    received_count += 1;
+
+                    if weight_0.is_some() {
+                        weight_1 = Some(weight);
+                    } else {
+                        weight_0 = Some(weight);
+                    }
+
                 } else {
                     println!("Failed to parse response...");
                 }
@@ -87,7 +116,7 @@ fn collect_responses(sock_rx: &UdpSocket, device_ids: &[u8]) -> (f64, usize)
             }
         }
     }
-    (total_weight, received_count)
+    (weight_0, weight_1)
 }
 
 /// Helper: Parse a single response
