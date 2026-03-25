@@ -9,6 +9,8 @@ mod service;
 mod plate_task;
 use plate_task::PlateDetectTask;
 
+use crate::service::WorkorderService;
+
 fn main() {
     let (sock_rx, sock_tx) = setup_sockets(5555, "192.168.4.255:4444");
 
@@ -28,11 +30,11 @@ fn main() {
     let mut plate_counter: u32 = 0;
     let mut task = PlateDetectTask::new();
 
-    // let request_timeout = Duration::from_millis(1000);    
-    // let mut service = service::WorkorderService::new(request_timeout);
+    let request_timeout = Duration::from_millis(1000);    
+    let mut service = WorkorderService::new(request_timeout);
 
-    // let config_path = "/home/qitech/config.json";
-    // service.connect(config_path).expect("Connection Failed");
+    let config_path = "/home/qitech/config.json";
+    service.connect(config_path).expect("Connection Failed");
 
     loop {
         send_requests(&sock_tx, &cmds);
@@ -42,6 +44,7 @@ fn main() {
         let w0 = opt_to_string(weight_0);
         let w1 = opt_to_string(weight_1);
 
+        println!("Service: {:?}", service);
         println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
 
         // Write to file
@@ -50,17 +53,17 @@ fn main() {
         if weight_0.is_some() && weight_1.is_some() {
             let total_weight = weight_0.unwrap() + weight_1.unwrap();
 
-            // if let Err(e) = service.update_recv() {
-            //     println!("Error while update_recv: {}", e);
-            // }
+            if let Err(e) = service.update_recv() {
+                println!("Error while update_recv: {}", e);
+            }
 
             if task.check(total_weight) {
                 plate_counter += 1;
             }
 
-            // if let Err(e) = service.update_send(Instant::now(), plate_counter) {
-            //     println!("Error while update_recv: {}", e);
-            // }
+            if let Err(e) = service.update_send(Instant::now(), plate_counter) {
+                println!("Error while update_recv: {}", e);
+            }
 
         } else {
             plate_counter = 0;
