@@ -103,7 +103,7 @@ impl WorkorderService
     }
 
     pub fn update_send(&mut self, now: Instant, plates_counted: u32) -> anyhow::Result<()>  {
-        let Some(mut client) = self.client.take() else {
+        let Some(client) = &mut self.client else {
             return Ok(());
         };
 
@@ -111,24 +111,6 @@ impl WorkorderService
             return Ok(());
         } 
 
-        self.send_next_request(now, &mut client, plates_counted);
-        self.client = Some(client);
-        Ok(())
-    }
-
-    pub fn current_entry(&self) -> Option<&Entry> {
-        match &self.state {
-            State::Zero => None,
-            State::One(data) => Some(&data.entry),
-            State::Two(data) => Some(&data.state_one_data.entry),
-        }
-    }
-}
-
-// utils
-impl WorkorderService 
-{
-    fn send_next_request(&mut self, now: Instant, client: &mut ProxyClient, quantity_counted: u32) {
         use State::*;
 
         let request = match &self.state {
@@ -157,7 +139,7 @@ impl WorkorderService
                     from_time,
                     to_time,
                     quantity_scrap,
-                    quantity_counted,
+                    quantity_counted: plates_counted,
                 };
 
                 Request::Finalize(request_data)
@@ -166,13 +148,27 @@ impl WorkorderService
 
         if self.last_request_ts + self.request_timeout < now {
             // timeout nor reached, can'T send request yet
-            return;
+            return Ok(());
         }
 
         client.queue_request(request).expect("Should be able to enqueue");
         self.last_request_ts = now;
+        
+        Ok(())
     }
 
+    pub fn current_entry(&self) -> Option<&Entry> {
+        match &self.state {
+            State::Zero => None,
+            State::One(data) => Some(&data.entry),
+            State::Two(data) => Some(&data.state_one_data.entry),
+        }
+    }
+}
+
+// utils
+impl WorkorderService 
+{
     fn handle_response(&mut self, response: Response) -> anyhow::Result<()> {
         use State::*;
 
