@@ -20,12 +20,12 @@ use types::{State, StateOneData, StateTwoData};
 pub struct WorkorderService 
 {
     // config / dependencies
-    enabled: bool,
-    client: Option<ProxyClient>,
-    request_timeout: Duration,
+    pub enabled: bool,
+    pub client: Option<ProxyClient>,
+    pub request_timeout: Duration,
 
-    state: State,
-    last_request_ts: Instant,
+    pub state: State,
+    pub last_request_ts: Instant,
 }
 
 // public interface

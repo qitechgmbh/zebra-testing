@@ -45,7 +45,7 @@ fn main() {
         let w0 = opt_to_string(weight_0);
         let w1 = opt_to_string(weight_1);
 
-        println!("Service: {:?}", &service);
+        println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
         println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
 
         // Write to file
