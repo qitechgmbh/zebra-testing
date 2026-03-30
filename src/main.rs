@@ -69,7 +69,7 @@ fn main() {
                 println!("Error while update_recv: {}", e);
             }
 
-            if task.check(weight_total) {
+            if let Some(plate) = task.check(weight_total) {
 
                 if let Some(entry) = service.current_entry() {
 
@@ -80,7 +80,7 @@ fn main() {
                     let msg = format!(
                         "[{}], {}, {}, {}, {}", 
                         time, 
-                        weight_total,                         
+                        plate,                         
                         entry.weight_bounds.min,
                         entry.weight_bounds.max, 
                         in_bounds

@@ -1,10 +1,7 @@
-use crate::logging::Logger;
-
 #[derive(Debug, Clone)]
 pub struct PlateDetectTask {
     peak: Option<f64>,
     seen_rising: bool,
-    recorded: bool,
 }
 
 impl PlateDetectTask {
@@ -16,52 +13,47 @@ impl PlateDetectTask {
         Self {
             peak: None,
             seen_rising: false,
-            recorded: false,
         }
     }
 
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         self.peak = None;
         self.seen_rising = false;
-        self.recorded = false;
     }
 
-    pub fn check(&mut self, weight: f64) -> bool {
+    pub fn check(&mut self, weight: f64) -> Option<f64> {
 
         let Some(current_peak) = self.peak else {
             // First sample initializes peak
             self.peak = Some(weight);
             
             println!("Initialized peak: {}", weight);
-            return false;
+            return None;
         };
 
         // Rising phase → update peak
         if weight > current_peak {
             self.peak = Some(weight);
             self.seen_rising = true;
-            self.recorded = false;
             println!("Updated peak: {}", weight);
-            return false;
+            return None;
         }
 
         // Ignore if no rising phase yet or already triggered
-        if !self.seen_rising || self.recorded {
+        if !self.seen_rising {
             // println!("Recorded or NOT seen rising yet");
-            return false;
+            return None;
         }
 
         // Compute drop from peak
         let drop = current_peak - weight;
 
         if drop >= Self::DETECTION_DELTA {
-            self.recorded = true;
-            self.seen_rising = false;
-
             println!("Recording plate: {:?}", self.peak);
-            return true;
+            self.seen_rising = false;
+            return self.peak.take();
         }
 
-        false
+        None
     }
 }
