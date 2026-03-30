@@ -142,7 +142,6 @@ impl WorkorderService
                     quantity_counted: plates_counted,
                 };
 
-                todo!("Don't complete yet");
                 Request::Finalize(request_data)
             },
         };

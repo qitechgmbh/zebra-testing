@@ -115,19 +115,11 @@ fn main() {
                 service::State::One(data) => {
                     logger.set_order(Some(data.entry.doc_entry));
                     logger.log_service(&format!("[{}], {:?}", time, data));
+                    task.set_trigger(Some(data.entry.weight_bounds.min));
                 },
                 service::State::Two(data) => {
                     logger.log_service(&format!("[{}], {:?}", time, data));
                 },
-            }
-
-            if service_state == 1 {
-
-            }
-
-            if service_state == 2 {
-                // create newline
-                logger.log_service(&format!(""));
             }
         }
 

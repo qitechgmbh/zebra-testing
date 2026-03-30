@@ -1,55 +1,55 @@
 #[derive(Debug, Clone)]
 pub struct PlateDetectTask {
-    peak: Option<f64>,
-    seen_rising: bool,
+    peak:    Option<f64>,
+    trigger: Option<f64>,
 }
 
 impl PlateDetectTask {
 
-    // In Kilograms
-    const DETECTION_DELTA: f64 = 4.4;
-
     pub fn new() -> Self {
         Self {
             peak: None,
-            seen_rising: false,
+            trigger: None,
         }
     }
 
     pub fn check(&mut self, weight: f64) -> Option<f64> {
 
+        let Some(trigger) = self.trigger else {
+            return None;
+        };
+
         let Some(current_peak) = self.peak else {
-            // First sample initializes peak
-            self.peak = Some(weight);
+            if weight >= trigger {
+                // initialize peak
+                self.peak = Some(weight);
+            }
             return None;
         };
 
         // Rising phase → update peak
         if weight > current_peak {
             self.peak = Some(weight);
-            self.seen_rising = true;
-            return None;
-        }
-
-        // Ignore if no rising phase yet or already triggered
-        if !self.seen_rising {
-            // println!("Recorded or NOT seen rising yet");
             return None;
         }
 
         // Compute drop from peak
         let drop = current_peak - weight;
 
-        if drop >= Self::DETECTION_DELTA {
-            self.seen_rising = false;
-            return self.peak.take();
+        // needs to drop to 1/3 of trigger
+        if drop < trigger * 0.66 {
+            return None;
         }
 
-        None
+        return self.peak.take();
     }
 
     pub fn reset(&mut self) {
         self.peak = None;
-        self.seen_rising = false;
     } 
+
+    pub fn set_trigger(&mut self, value: Option<f64>) {
+        self.trigger = value;
+        self.reset();
+    }   
 }
