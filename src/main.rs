@@ -34,8 +34,8 @@ fn main() {
     let mut service = WorkorderService::new(request_timeout);
     service.set_enabled(true);
 
-    // let config_path = "/home/qitech/config.json";
-    //service.connect(config_path).expect("Connection Failed");
+    let config_path = "/home/qitech/config.json";
+    service.connect(config_path).expect("Connection Failed");
 
     let mut last = Instant::now();
 
