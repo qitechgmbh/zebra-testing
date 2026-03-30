@@ -1,6 +1,8 @@
 use std::{fs::OpenOptions, net::UdpSocket, time::{Duration, Instant}};
 use std::io::Write;
 
+mod logging;
+
 mod xtrem;
 use xtrem::*;
 
@@ -9,7 +11,7 @@ mod service;
 mod plate_task;
 use plate_task::PlateDetectTask;
 
-use crate::service::WorkorderService;
+use crate::{logging::Logger, service::WorkorderService};
 
 fn main() {
     let (sock_rx, sock_tx) = setup_sockets(5555, "192.168.4.255:4444");
@@ -20,12 +22,7 @@ fn main() {
         .map(|&id| build_request(id))
         .collect();
 
-    // Open file once (append mode)
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("weights.csv")
-        .expect("failed to open file");
+    let mut logger = Logger::new();
 
     let mut plate_counter: u32 = 0;
     let mut task = PlateDetectTask::new();
@@ -39,7 +36,11 @@ fn main() {
 
     let mut last = Instant::now();
 
+    let mut service_state: u32 = 0;
+
     loop {
+        let now = Instant::now();
+
         send_requests(&sock_tx, &cmds);
 
         let (weight_0, weight_1) = collect_data(&sock_rx);
@@ -47,38 +48,33 @@ fn main() {
         let w0 = opt_to_string(weight_0);
         let w1 = opt_to_string(weight_1);
 
-        if Instant::now().duration_since(last) > Duration::from_millis(1000) {
+        if now.duration_since(last) > Duration::from_millis(1000) {
             println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
             println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
-            last = Instant::now();
+            last = now;
         }
 
+        let weight_total = sum_weights(weight_0, weight_1);
+        let wt = opt_to_string(weight_total);
+
         // Write to file
-        writeln!(file, "{} | {} : count({})", w0, w1, plate_counter).expect("failed to write");
+        logger.log_scales(&format!("[{}], {}, {}, {}", now.elapsed().as_secs_f64(), w0, w1, wt));
 
-        if weight_0.is_some() && weight_1.is_some() {
-            let total_weight = weight_0.unwrap() + weight_1.unwrap();
-
+        if let Some(weight_total) = weight_total {
             if let Err(e) = service.update_recv() {
                 println!("Error while update_recv: {}", e);
             }
 
-            if task.check(total_weight) {
+            if task.check(weight_total, &mut logger) {
 
                 if let Some(entry) = service.current_entry() {
 
                     let in_bounds = 
-                        entry.weight_bounds.min <= total_weight 
-                        && total_weight <= entry.weight_bounds.max;
+                        entry.weight_bounds.min <= weight_total 
+                        && weight_total <= entry.weight_bounds.max;
 
-                    writeln!(
-                        file, 
-                        "Plate: {}, Bounds: ({} : {}) -> {}", 
-                        total_weight, 
-                        entry.weight_bounds.min,
-                        entry.weight_bounds.max, 
-                        in_bounds
-                    ).expect("failed to write"); 
+                    // use newline to easier find plate measurements
+                    logger.log_scales(&format!(""));
 
                     if in_bounds {
                         plate_counter += 1;
@@ -95,8 +91,22 @@ fn main() {
             task.reset();
         }
 
+        if service_state != service.state.index() {
+            logger.log_service(&format!("[{}], {:?}", now.elapsed().as_secs_f64(), service.state));
+            service_state = service.state.index();
+
+            if service_state == 2 {
+                // create newline
+                logger.log_service(&format!(""));
+            }
+        }
+
         std::thread::sleep(Duration::from_secs_f64(1.0 / 12.0));
     }
+}
+
+fn sum_weights(weight_0: Option<f64>, weight_1: Option<f64>) -> Option<f64> {
+    Some(weight_0? + weight_1?)
 }
 
 // Helper to format Option<f32>

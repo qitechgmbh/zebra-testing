@@ -8,6 +8,16 @@ pub enum State {
     Two(StateTwoData),
 }
 
+impl State {
+    pub fn index(&self) -> u32 {
+        match self {
+            State::Zero => 0,
+            State::One(_) => 1,
+            State::Two(_) => 2,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct StateOneData {
     pub entry: Entry,

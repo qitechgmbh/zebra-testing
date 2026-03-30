@@ -1,3 +1,5 @@
+use crate::logging::Logger;
+
 #[derive(Debug, Clone)]
 pub struct PlateDetectTask {
     peak: Option<f64>,
@@ -24,7 +26,7 @@ impl PlateDetectTask {
         self.recorded = false;
     }
 
-    pub fn check(&mut self, weight: f64) -> bool {
+    pub fn check(&mut self, weight: f64, logger: &mut Logger) -> bool {
 
         let Some(current_peak) = self.peak else {
             // First sample initializes peak
@@ -46,7 +48,7 @@ impl PlateDetectTask {
 
         // Ignore if no rising phase yet or already triggered
         if !self.seen_rising || self.recorded {
-            println!("Recorded or NOT seen rising yet");
+            // println!("Recorded or NOT seen rising yet");
             return false;
         }
 
