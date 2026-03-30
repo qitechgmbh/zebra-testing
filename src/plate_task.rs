@@ -21,8 +21,6 @@ impl PlateDetectTask {
         let Some(current_peak) = self.peak else {
             // First sample initializes peak
             self.peak = Some(weight);
-            
-            println!("Initialized peak: {}", weight);
             return None;
         };
 
@@ -30,7 +28,6 @@ impl PlateDetectTask {
         if weight > current_peak {
             self.peak = Some(weight);
             self.seen_rising = true;
-            println!("Updated peak: {}", weight);
             return None;
         }
 
@@ -44,7 +41,6 @@ impl PlateDetectTask {
         let drop = current_peak - weight;
 
         if drop >= Self::DETECTION_DELTA {
-            println!("Recording plate: {:?}", self.peak);
             self.seen_rising = false;
             return self.peak.take();
         }
