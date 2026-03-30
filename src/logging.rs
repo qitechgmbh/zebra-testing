@@ -24,17 +24,15 @@ impl Logger {
             return;
         };
 
-        // Folder path as string, e.g., "123"
         let folder_path = format!("/home/qitech/ff01_orders/order_{}", order_id);
         let path = Path::new(&folder_path);
 
-        // If folder exists, remove it entirely
         if path.exists() {
             fs::remove_dir_all(&path).expect("Failed to remove existing folder");
         }
 
-        // Create folder
-        fs::create_dir(&path).expect("Failed to create folder");
+        // Recursive directory creation
+        fs::create_dir_all(&path).expect("Failed to create folder recursively");
 
         // Create 3 CSV files inside the folder
         let scales_path  = path.join("scales.csv");

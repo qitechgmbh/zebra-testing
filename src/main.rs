@@ -95,6 +95,23 @@ fn main() {
             logger.log_service(&format!("[{}], {:?}", now.elapsed().as_secs_f64(), service.state));
             service_state = service.state.index();
 
+            match &service.state {
+                service::State::Zero => {
+                    logger.log_service(&format!(""));
+                },
+                service::State::One(data) => {
+                    logger.set_order(Some(data.entry.doc_entry));
+                    logger.log_service(&format!("[{}], {:?}", now.elapsed().as_secs_f64(), data));
+                },
+                service::State::Two(data) => {
+                    logger.log_service(&format!("[{}], {:?}", now.elapsed().as_secs_f64(), data));
+                },
+            }
+
+            if service_state == 1 {
+
+            }
+
             if service_state == 2 {
                 // create newline
                 logger.log_service(&format!(""));

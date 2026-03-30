@@ -14,7 +14,7 @@ use stahlwerk_extension::ff01::{
 };
 
 mod types;
-use types::{State, StateOneData, StateTwoData};
+pub use types::{State, StateOneData, StateTwoData};
 
 #[derive(Debug)]
 pub struct WorkorderService 
