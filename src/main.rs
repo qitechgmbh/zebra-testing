@@ -91,9 +91,7 @@ fn main() {
                     // use newline to easier find plate measurements
                     logger.log_scales(&format!(""));
 
-                    if in_bounds {
-                        plate_counter += 1;
-                    }
+                    plate_counter += 1;
                 };              
             }
 
