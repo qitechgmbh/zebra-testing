@@ -64,7 +64,7 @@ fn main() {
 
             if now.duration_since(last) > Duration::from_millis(1000) {
                 // println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
-                println!("Data: {} -> (plate count: {}) : (service_state_id: {})", weight_total, plate_counter, service_state);
+                println!("Data: {} | {:?} -> (plate count: {}) : (service_state_id: {})", weight_total, &task, plate_counter, service_state);
                 last = now;
             }
 

@@ -1,7 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct PlateDetectTask {
-    peak:    Option<f64>,
-    trigger: Option<f64>,
+    pub peak:    Option<f64>,
+    pub trigger: Option<f64>,
 }
 
 impl PlateDetectTask {
