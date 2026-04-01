@@ -52,12 +52,6 @@ fn main() {
         let w0 = opt_to_string(weight_0);
         let w1 = opt_to_string(weight_1);
 
-        if now.duration_since(last) > Duration::from_millis(1000) {
-            // println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
-            println!("Data: {} | {} -> (plate count: {}) : (service_state_id: {})", w0, w1, plate_counter, service_state);
-            last = now;
-        }
-
         let weight_total = sum_weights(weight_0, weight_1);
         let wt = opt_to_string(weight_total);
 
@@ -67,6 +61,12 @@ fn main() {
         if let Some(weight_total) = weight_total {
 
             let weight_total = weight_total - 295.2; // hard coded tare value
+
+            if now.duration_since(last) > Duration::from_millis(1000) {
+                // println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
+                println!("Data: {} -> (plate count: {}) : (service_state_id: {})", weight_total, plate_counter, service_state);
+                last = now;
+            }
 
             if let Err(e) = service.update_recv() {
                 println!("Error while update_recv: {}", e);
