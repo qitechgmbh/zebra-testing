@@ -1,36 +1,26 @@
-use std::{collections::HashMap, io::Read, net::{TcpListener, TcpStream}, thread};
+use std::{io::Read, net::{TcpListener, TcpStream}, sync::Arc, thread};
 
+use duckdb::Connection;
 use httparse::{EMPTY_HEADER, Request, Status};
 
 mod utils;
 mod http;
-
 mod sql;
 mod args;
 use args::QueryArgs;
-
-mod weights;
-mod plates;
-mod orders;
-mod logs;
-
 mod responses;
-use responses::MISSING_PATH;
-use responses::UNSUPPORTED_ROUTE;
-use responses::INVALID_METHOD;
-use responses::MISSING_METHOD;
 
-use crate::query::{sql::FieldType, utils::send_response};
+use crate::{config::Config, query::utils::respond_arrow};
 
-pub fn run(port: u16, db_path: String) -> anyhow::Result<()> {
-    let address = format!("0.0.0.0:{port}");
+pub fn run(config: Arc<Config>) -> anyhow::Result<()> {
+    let address = format!("0.0.0.0:{}", config.query_port);
     let listener = TcpListener::bind(address)?;
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                let db_path = db_path.clone();
-                thread::spawn(move || handle_client(stream, db_path));
+                let config = config.clone();
+                thread::spawn(move || handle_client(config, stream));
             }
             Err(e) => eprintln!("Failed to accept client: {e}"),
         }
@@ -39,7 +29,7 @@ pub fn run(port: u16, db_path: String) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_client(mut stream: TcpStream, db_path: String) -> anyhow::Result<()> {
+fn handle_client(config: Arc<Config>, mut stream: TcpStream) -> anyhow::Result<()> {
     let mut buf = [0u8; 4096];
 
     loop {
@@ -56,17 +46,17 @@ fn handle_client(mut stream: TcpStream, db_path: String) -> anyhow::Result<()> {
         match request.parse(&buf[..size])? {
             Status::Complete(_) => {
                 let Some(method) = request.method else {
-                    http::bad_request(&mut stream, MISSING_METHOD)?;
+                    http::bad_request(&mut stream, responses::MISSING_METHOD)?;
                     continue;
                 };
 
                 if method != "GET" {
-                    http::bad_request(&mut stream, INVALID_METHOD)?;
+                    http::bad_request(&mut stream, responses::INVALID_METHOD)?;
                     continue;
                 }
 
                 let Some(path) = request.path else {
-                    http::bad_request(&mut stream, MISSING_PATH)?;
+                    http::bad_request(&mut stream, responses::MISSING_PATH)?;
                     continue;
                 };
 
@@ -81,12 +71,12 @@ fn handle_client(mut stream: TcpStream, db_path: String) -> anyhow::Result<()> {
                 };
                 
                 let result = match route {
-                    "/weights" => weights::create_sql(args),
-                    "/plates"  => plates::create_sql(args),
-                    "/orders"  => orders::create_sql(args),
-                    "/logs"    => logs::create_sql(args),
+                    "/weights" => sql::create("weights", utils::weights_fields(), args),
+                    "/plates"  => sql::create("plates",  utils::plates_fields(), args),
+                    "/orders"  => sql::create("orders",  utils::orders_fields(), args),
+                    "/logs"    => sql::create("logs",    utils::logs_fields(), args),
                     _ => {
-                        http::bad_request(&mut stream, UNSUPPORTED_ROUTE)?;
+                        http::bad_request(&mut stream, responses::UNSUPPORTED_ROUTE)?;
                         continue;
                     }
                 };
@@ -99,7 +89,23 @@ fn handle_client(mut stream: TcpStream, db_path: String) -> anyhow::Result<()> {
                     },
                 };
 
-                if let Err(e) = send_response(&db_path, &mut stream, sql, params) {
+                let connection = match Connection::open(&config.db_path) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        http::internal_error(&mut stream, &e.to_string())?;
+                        continue;
+                    },
+                };
+
+                let statement = match connection.prepare(&sql) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        http::internal_error(&mut stream, &e.to_string())?;
+                        continue;
+                    },
+                };
+
+                if let Err(e) = respond_arrow(statement, &mut stream, params) {
                     http::internal_error(&mut stream, &e.to_string())?;
                     continue;
                 }

@@ -5,12 +5,22 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     let connection = Connection::open(path)?;
 
     connection.execute(
-        "CREATE TYPE IF NOT EXISTS OrderStatus AS ENUM ('started', 'aborted', 'completed');", 
+        "CREATE TYPE IF NOT EXISTS OrderStatus AS ENUM ('Started', 'Aborted', 'Completed');", 
         []
     )?;
 
     connection.execute(
-        "CREATE TYPE IF NOT EXISTS LogCategory AS ENUM ('debug', 'info', 'warn', 'error');", 
+        "CREATE TYPE IF NOT EXISTS LogCategory AS ENUM ('Debug', 'Info', 'Warn', 'Error');", 
+        []
+    )?;
+
+    connection.execute(
+        "CREATE TYPE IF NOT EXISTS WeightBounds AS STRUCT (
+            min     SMALLINT, 
+            max     SMALLINT, 
+            desired SMALLINT, 
+            trigger SMALLINT
+        );", 
         []
     )?;
 
@@ -38,8 +48,8 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
         "CREATE TABLE IF NOT EXISTS orders (
             order_id       UINTEGER PRIMARY KEY,
             worker_id      UINTEGER,
-            status         OrderStatus,
-            bounds         SMALLINT[4],
+            status         OrderStatus NOT NULL,
+            bounds         WeightBounds,
             quantity_good  UINTEGER,
             quantity_scrap UINTEGER,
             started_at     TIMESTAMP_NS NOT NULL,

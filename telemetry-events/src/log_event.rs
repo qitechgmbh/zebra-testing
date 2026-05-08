@@ -54,4 +54,15 @@ impl LogCategory {
             _ => None,
         }
     }
+
+    pub fn to_str(self) -> &'static str {
+        use LogCategory::*;
+
+        match self {
+            Debug => "Debug",
+            Info  => "Info",
+            Warn  => "Warn",
+            Error => "Error",
+        }
+    }
 }

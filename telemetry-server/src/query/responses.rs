@@ -1,11 +1,25 @@
-pub const MISSING_PATH: &str = 
-    "Missing HTTP path. Supported  paths: /weights, /plates, /orders, /logs";
+macro_rules! responses {
+    (
+        $(
+            $name:ident => $msg:expr
+        ),* $(,)?
+    ) => {
+        $(
+            pub const $name: &'static str = $msg;
+        )*
+    };
+}
 
-pub const UNSUPPORTED_ROUTE: &str = 
-    "Unknown route. Supported: /weights, /plates, /orders, /logs";
+responses! {
+    MISSING_PATH => 
+        "Missing HTTP path. Supported paths: /weights, /plates, /orders, /logs",
 
-pub const MISSING_METHOD: &str = 
-    "Missing HTTP method (must be GET)";
+    UNSUPPORTED_ROUTE => 
+        "Unknown route. Supported: /weights, /plates, /orders, /logs",
 
-pub const INVALID_METHOD: &str = 
-    "Invalid method (only GET supported)";
+    MISSING_METHOD => 
+        "Missing HTTP method (must be GET)",
+
+    INVALID_METHOD => 
+        "Invalid method (only GET supported)",
+}

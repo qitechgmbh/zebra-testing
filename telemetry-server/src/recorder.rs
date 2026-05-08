@@ -4,7 +4,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use telemetry_core::{Event, EventKind, LogEvent, OrderEvent, PlateEvent, WeightEvent};
 
-use crate::{PayloadReceiver, RECORDER_CACHE_SIZE};
+use crate::{PayloadReceiver, config::Config};
 
 #[derive(Debug)]
 struct EventEntry<T: Debug> {
@@ -13,18 +13,21 @@ struct EventEntry<T: Debug> {
 }
 #[derive(Debug)]
 pub struct Recorder {
+    capacity:   usize,
     connection: Connection,
-    weights: heapless::Vec<EventEntry<WeightEvent>, RECORDER_CACHE_SIZE>,
-    plates:  heapless::Vec<EventEntry<PlateEvent>,  RECORDER_CACHE_SIZE>,
-    orders:  heapless::Vec<EventEntry<OrderEvent>,  RECORDER_CACHE_SIZE>,
-    logs:    heapless::Vec<EventEntry<LogEvent>,    RECORDER_CACHE_SIZE>,
+    weights:    Vec<EventEntry<WeightEvent>>,
+    plates:     Vec<EventEntry<PlateEvent>>,
+    orders:     Vec<EventEntry<OrderEvent>>,
+    logs:       Vec<EventEntry<LogEvent>>,
 }
 
 impl Recorder {
-    pub fn new(db_path: String) -> anyhow::Result<Self> {
-        let connection = Connection::open(db_path)?;
+    pub fn new(config: Arc<Config>) -> anyhow::Result<Self> {
+        let capacity   = config.recorder_cache_size;
+        let connection = Connection::open(&config.db_path)?;
 
         Ok(Self {
+            capacity,
             connection,
             weights: Default::default(),
             plates:  Default::default(),
@@ -60,10 +63,11 @@ impl Recorder {
                     event:    kind,
                 };
 
-                if let Err(v) = self.weights.push(entry) {
+                if self.weights.len() >= self.capacity {
                     self.flush_weights()?;
-                    self.weights.push(v).expect("Should be empty");
-                };
+                }
+
+                self.weights.push(entry);
             }
             EventKind::Plate(kind) => {
                 let entry = EventEntry {
@@ -71,10 +75,11 @@ impl Recorder {
                     event:    kind,
                 };
 
-                if let Err(v) = self.plates.push(entry) {
+                if self.plates.len() >= self.capacity {
                     self.flush_plates()?;
-                    self.plates.push(v).expect("Should be empty");
-                };
+                }
+
+                self.plates.push(entry);
             }
             EventKind::Order(kind) => {
                 let entry = EventEntry {
@@ -82,10 +87,11 @@ impl Recorder {
                     event:    kind,
                 };
 
-                if let Err(v) = self.orders.push(entry) {
+                if self.orders.len() >= self.capacity {
                     self.flush_orders()?;
-                    self.orders.push(v).expect("Should be empty");
-                };
+                }
+
+                self.orders.push(entry);
             }
             EventKind::Log(kind) => {
                 let entry = EventEntry {
@@ -93,10 +99,11 @@ impl Recorder {
                     event: kind,
                 };
 
-                if let Err(v) = self.logs.push(entry) {
-                    self.flush_logs()?;
-                    self.logs.push(v).expect("Should be empty");
-                };
+                if self.logs.len() >= self.capacity {
+                    self.flush_orders()?;
+                }
+
+                self.logs.push(entry);
             }
         }
 
@@ -160,14 +167,14 @@ impl Recorder {
         let mut stmt_started = tx.prepare(
             r#"
             INSERT INTO orders 
-            VALUES (?, ?, ?, [?, ?, ?, ?], ?, ?, ?, ?)
+            VALUES (?, ?, ?, row(?, ?, ?, ?), ?, ?, ?, ?)
         "#,
         )?;
 
         let mut stmt_aborted = tx.prepare(
             r#"
             UPDATE orders
-            SET status = 'aborted',
+            SET status = 'Aborted',
                 closed_at = ?
             WHERE order_id = ?
         "#,
@@ -176,7 +183,7 @@ impl Recorder {
         let mut stmt_completed = tx.prepare(
             r#"
             UPDATE orders
-            SET status = 'completed',
+            SET status = 'Completed',
                 quantity_good = ?,
                 quantity_scrap = ?,
                 closed_at = ?
@@ -196,7 +203,7 @@ impl Recorder {
                     stmt_started.execute(params![
                         order_id,
                         worker_id,
-                        "started",
+                        "Started",
                         bounds.as_ref().map(|b| b.min),
                         bounds.as_ref().map(|b| b.max),
                         bounds.as_ref().map(|b| b.desired),
@@ -244,7 +251,7 @@ impl Recorder {
 
             stmt.execute(params![
                 datetime,
-                entry.event.category as u8,
+                entry.event.category.to_str(),
                 entry.event.message.as_bytes(),
             ])?;
         }

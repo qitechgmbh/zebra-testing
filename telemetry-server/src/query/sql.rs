@@ -1,17 +1,20 @@
 use std::collections::HashMap;
+use chrono::{DateTime, NaiveDateTime};
 use duckdb::types::{TimeUnit, Value};
 use crate::query::args::QueryArgs;
 
+#[derive(Debug, Clone)]
 pub enum FieldType {
     I16,
     U32,
-    Enum,
-    Array(usize, Box<FieldType>),
-    String,
+    Message,
     Timestamp,
+    WeightBounds,
+    LogCategory,
+    OrderStatus,
 }
 
-pub fn create_sql(
+pub fn create(
     table:  &str,
     fields: HashMap<String, FieldType>,
     query:  QueryArgs,
@@ -112,24 +115,40 @@ fn parse_where(
             anyhow::bail!("Unknown field in WHERE: {field}");
         };
 
-        let parsed_value = match field_type {
-            FieldType::U32 => Value::UInt(value.parse()?),
-            FieldType::String => {
-                // strip optional quotes
+        let parsed_value = match field_type.to_owned() {
+            FieldType::U32 => {
+                Value::UInt(value.parse()?)
+            }
+            FieldType::I16 => {
+                Value::Int(value.parse()?)
+            }
+            FieldType::Message => {
                 let v = value.trim_matches('"').to_string();
                 Value::Text(v)
             }
             FieldType::Timestamp => {
-                
-                Value::Timestamp(TimeUnit::Microsecond, value.to_string())
+                parse_datetime(value)?
             }
-            FieldType::I16 => Value::Int(value.parse()?),
-            FieldType::Enum => {
-                Value::Enum(value.to_string())
-            },
-            FieldType::Array(len, field_type) => {
-                // []
-            },
+            FieldType::WeightBounds => {
+                anyhow::bail!("WeightBounds not supported inside $where")
+            }
+            FieldType::LogCategory => {
+                match value.trim().to_lowercase().as_str() {
+                    "debug" => Value::Enum("Debug".to_string()),
+                    "info"  => Value::Enum("Info".to_string()),
+                    "warn"  => Value::Enum("Warn".to_string()),
+                    "error" => Value::Enum("Error".to_string()),
+                    _ => anyhow::bail!("Invalid LogCategory"),
+                }
+            }
+            FieldType::OrderStatus => {
+                match value.trim().to_lowercase().as_str() {
+                    "started"   => Value::Enum("Started".to_string()),
+                    "completed" => Value::Enum("Completed".to_string()),
+                    "aborted"   => Value::Enum("Aborted".to_string()),
+                    _ => anyhow::bail!("Invalid OrderStatus"),
+                }
+            }
         };
 
         if i > 0 {
@@ -189,4 +208,33 @@ fn parse_order_by(
     }
 
     Ok(out)
+}
+
+fn parse_datetime(input: &str) -> anyhow::Result<Value> {
+    // timezone-aware formats
+    const TZ_FORMATS: &[&str] = &[
+        "%Y-%m-%d %H:%M:%S%.f%:z",
+        "%Y-%m-%d %H:%M:%S%.f%z",
+    ];
+
+    for fmt in TZ_FORMATS {
+        if let Ok(dt) = DateTime::parse_from_str(input, fmt) {
+            return Ok(Value::Timestamp(
+                TimeUnit::Microsecond,
+                dt.timestamp_micros(),
+            ));
+        }
+    }
+
+    // naive UTC fallback
+    const NAIVE_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
+
+    if let Ok(dt) = NaiveDateTime::parse_from_str(input, NAIVE_FORMAT) {
+        return Ok(Value::Timestamp(
+            TimeUnit::Microsecond,
+            dt.and_utc().timestamp_micros(),
+        ));
+    }
+
+    anyhow::bail!("Invalid datetime format")
 }

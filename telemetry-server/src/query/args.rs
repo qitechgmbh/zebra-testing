@@ -11,6 +11,10 @@ impl<'a> QueryArgs<'a> {
     pub fn new(query: &'a str) -> anyhow::Result<Self> {
         let mut data = HashMap::new();
 
+        if query.is_empty() {
+            return Ok(Self { data });
+        }
+
         for pair in query.split('&') {
             let (k, v) = pair.split_once('=').ok_or(anyhow!("Missing \"=\" in query"))?;
 
@@ -28,6 +32,7 @@ impl<'a> QueryArgs<'a> {
         Ok(Self { data })
     }
 
+    #[allow(unused)]
     pub fn get_datetime(&self, name: &str) -> anyhow::Result<Option<&str>> {
         let err = anyhow!("Invalid value for: {name}");
 
@@ -49,6 +54,7 @@ impl<'a> QueryArgs<'a> {
         Err(err)
     }
 
+    #[allow(unused)]
     pub fn get_int<T: FromStr>(&self, name: &str) -> anyhow::Result<Option<T>> {
         let err = anyhow!("Invalid value for: {name}");
 
@@ -64,7 +70,12 @@ impl<'a> QueryArgs<'a> {
 
     pub fn get_csv(&self, name: &str) -> anyhow::Result<HashSet<String>> {
         let mut values = HashSet::new();
-        for value in name.split(',') {
+
+        let Some(field) = self.data.get(name) else {
+            return Ok(values);
+        };
+
+        for value in field.split(',') {
             let value = value.to_string();
 
             if values.contains(&value) {

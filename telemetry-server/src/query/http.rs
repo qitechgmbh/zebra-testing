@@ -8,7 +8,7 @@ pub fn bad_request(stream: &mut TcpStream, msg: &str) -> anyhow::Result<()> {
     error(stream, 400, "Bad Request", msg)
 }
 
-pub fn start_stream(stream: &mut TcpStream) -> anyhow::Result<()> {
+pub fn start_arrow_stream(stream: &mut TcpStream) -> anyhow::Result<()> {
     let header = b"\
         HTTP/1.1 200 OK\r\n\
         Content-Type: application/vnd.apache.arrow.stream\r\n\
@@ -20,7 +20,7 @@ pub fn start_stream(stream: &mut TcpStream) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn write_batch(stream: &mut TcpStream, data: &[u8]) -> anyhow::Result<()> {
+pub fn write_arrow_batch(stream: &mut TcpStream, data: &[u8]) -> anyhow::Result<()> {
     let size = format!("{:X}\r\n", data.len());
     stream.write_all(size.as_bytes())?;
     stream.write_all(data)?;
@@ -28,7 +28,7 @@ pub fn write_batch(stream: &mut TcpStream, data: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub  fn finish_stream(stream: &mut TcpStream) -> anyhow::Result<()> {
+pub  fn finish_arrow_stream(stream: &mut TcpStream) -> anyhow::Result<()> {
     stream.write_all(b"0\r\n\r\n")?;
     Ok(())
 }

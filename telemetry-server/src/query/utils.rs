@@ -1,7 +1,7 @@
 use std::{collections::HashMap, net::TcpStream};
 
 use arrow::ipc::writer::StreamWriter;
-use duckdb::{Connection, types::Value};
+use duckdb::{Statement, params_from_iter, types::Value};
 
 use crate::query::{http, sql::FieldType};
 
@@ -12,18 +12,16 @@ pub fn destruct_path<'a>(path: &'a str) -> (&'a str, Option<&'a str>)  {
     }
 }
 
-pub fn send_response(
-    db_path: &String, 
+pub fn respond_arrow(
+    mut statement: Statement<'_>, 
     stream: &mut TcpStream, 
-    sql: String,
     params: Vec<Value>
 ) -> anyhow::Result<()> {
-    let connection = Connection::open(db_path)?;
+    let iterator = statement.query_arrow(
+        params_from_iter(params)
+    )?;
 
-    let mut statement = connection.prepare(&sql)?;
-    let iterator = statement.query_arrow(params)?;
-
-    http::start_stream(stream)?;
+    http::start_arrow_stream(stream)?;
 
     for batch in iterator {
         let mut buffer = Vec::new();
@@ -34,10 +32,10 @@ pub fn send_response(
             writer.finish()?;
         }
 
-        http::write_batch(stream, &buffer)?;
+        http::write_arrow_batch(stream, &buffer)?;
     }
 
-    http::finish_stream(stream)?;
+    http::finish_arrow_stream(stream)?;
 
     Ok(())
 }
@@ -63,8 +61,8 @@ pub fn orders_fields() -> HashMap<String, FieldType> {
     let mut fields = HashMap::<String,     FieldType>::new();
     fields.insert("order_id".into(),       FieldType::U32);
     fields.insert("worker_id".into(),      FieldType::U32);
-    fields.insert("status".into(),         FieldType::Enum);
-    fields.insert("bounds".into(),         FieldType::Array(4, Box::new(FieldType::I16)));
+    fields.insert("status".into(),         FieldType::OrderStatus);
+    fields.insert("bounds".into(),         FieldType::WeightBounds);
     fields.insert("quantity_good".into(),  FieldType::U32);
     fields.insert("quantity_scrap".into(), FieldType::U32);
     fields.insert("started_at".into(),     FieldType::Timestamp);
@@ -75,7 +73,7 @@ pub fn orders_fields() -> HashMap<String, FieldType> {
 pub fn logs_fields() -> HashMap<String, FieldType> {
     let mut fields = HashMap::<String, FieldType>::new();
     fields.insert("timestamp".into(),  FieldType::Timestamp);
-    fields.insert("category".into(),   FieldType::Enum);
-    fields.insert("message".into(),    FieldType::String);
+    fields.insert("category".into(),   FieldType::LogCategory);
+    fields.insert("message".into(),    FieldType::Message);
     fields
 }

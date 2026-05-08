@@ -119,6 +119,14 @@ impl OrderEvent {
             _ => None
         }
     }
+
+    pub fn tag_as_str(&self)-> &'static str  {
+        match self {
+            Self::Started   { .. } => "Started",
+            Self::Aborted   { .. } => "Aborted",
+            Self::Completed { .. } => "Completed",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

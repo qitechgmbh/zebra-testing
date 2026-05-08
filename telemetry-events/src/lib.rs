@@ -14,6 +14,9 @@ mod log_event;
 pub use log_event::LogEvent;
 pub use log_event::LogCategory;
 
+pub type EventSize = u16;
+pub const FRAME_SIZE_MAX: usize = 512;
+
 #[derive(Debug, Clone)]
 pub struct Event {
     pub datetime: DateTime<Utc>,
@@ -29,7 +32,7 @@ impl Event {
 
         // kind tag
         let kind_id = match &self.kind {
-            Weight(_) => 0u8,
+            Weight(_) => 0,
             Plate(_)  => 1,
             Order(_)  => 2,
             Log(_)    => 3,
