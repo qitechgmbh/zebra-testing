@@ -23,4 +23,7 @@ crossbeam="0.8.4"
 httparse="1.10.1"
 signal-hook = "0.3"
 
+bytes="1.11.1"
+futures="0.3.32"
+
 tokio={version="1.52.2", features = ["full"]}

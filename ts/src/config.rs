@@ -1,63 +1,55 @@
-use anyhow::anyhow;
 use std::{
     env::{VarError, var},
-    str::FromStr, sync::Arc, time::Duration,
+    str::FromStr, sync::Arc,
 };
+use anyhow::anyhow;
+use telemetry_core::MachineDataSchemas;
 
 #[derive(Debug)]
 pub struct Config {
     pub db_path: String,
-    pub socket_path: String,
-    pub query_port: u16,
-<
+    pub sock_path: String,
+
     pub tcp_ipv4: String,
     pub tcp_port: u16,
 
-    // cache config
-    pub channel_capacity: usize,
-    pub recorder_cache_size: usize,
-    pub live_channel_capacity: usize,
-
-    // timeouts
-    pub ingest_read_timeout: Duration,
+    pub machines: Vec<(String, MachineDataSchemas)>,
 }
 
 impl Config {
+    pub fn default() -> Arc<Self> {
+        let instance = Self {
+            db_path:   "idk".into(),
+            sock_path: "/tmp/qitech-telemetry.sock".into(),
+            tcp_port:  9000,
+            tcp_ipv4:  "0.0.0.0".into(),
+            machines:  vec![("scales_ff01".into(), MachineDataSchemas::ScalesS0)]
+        };
+
+        Arc::new(instance)
+    }
+
+    /*
     pub fn init() -> anyhow::Result<Arc<Self>> {
         let db_path 
             = import_as("QITECH_TELEMETRY_DB_PATH")?;
 
-        let socket_path 
+        let sock_path 
             = import_as("QITECH_TELEMETRY_SOCKET_PATH")?;
 
-        let live_port 
+        let tcp_port 
             = import_as_or("QITECH_TELEMETRY_LIVE_PORT", 22010)?;
-
-        let query_port 
-            = import_as_or("QITECH_TELEMETRY_QUERY_PORT", 22020)?;
-
-        let channel_capacity 
-            = import_as_or("QITECH_TELEMETRY_CHANNEL_CAPACITY", 4096)?;
-
-        let recorder_cache_size 
-            = import_as_or("QITECH_TELEMETRY_RECORDER_CACHE_SIZE", 32)?;
-
-        let live_channel_capacity 
-            = import_as_or("QITECH_TELEMETRY_LIVE_CHANNEL_CAPACITY", 128)?;
 
         let instance = Self {
             db_path,
-            socket_path,
-            tcp_port: live_port,
-            query_port,
-            channel_capacity,
-            live_channel_capacity,
-            recorder_cache_size,
-            ingest_read_timeout: Duration::from_millis(2000),
+            sock_path,
+            tcp_port,
+            tcp_ipv4: "0.0.0.0".into(),
         };
 
         Ok(Arc::new(instance))
     }
+    */
 }
 
 fn import_as<T>(name: &str) -> anyhow::Result<T>

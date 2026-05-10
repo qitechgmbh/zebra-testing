@@ -6,13 +6,29 @@ use std::{
 };
 
 use crossbeam::channel::{Sender, TrySendError, bounded};
+use overseer::{CycleStatus, Service, ServiceError};
 
 use crate::{Payload, PayloadReceiver, PayloadSender, config::Config};
 
 
+pub struct LiveService {
+    pub config: Arc<Config>, 
+    pub rx: Arc<PayloadReceiver>
+}
 
+impl Service for LiveService {
+    fn cycle(&mut self) -> CycleStatus {
+        todo!()
+    }
 
+    fn shutdown(&mut self) -> CycleStatus {
+        todo!()
+    }
 
+    fn take_errors(&mut self) -> Vec<ServiceError> {
+        todo!()
+    }
+}
 
 
 
@@ -59,7 +75,7 @@ pub fn run(config: Arc<Config>, rx: Arc<PayloadReceiver>) -> anyhow::Result<()> 
 }
 
 fn run_accept(config: Arc<Config>, clients_tx: Sender<PayloadSender>) -> anyhow::Result<()> {
-    let address = format!("0.0.0.0:{}", config.live_port);
+    let address = format!("0.0.0.0:{}", config.tcp_port);
     let listener = TcpListener::bind(address)?;
 
     for stream in listener.incoming() {

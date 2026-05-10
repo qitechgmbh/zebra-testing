@@ -11,6 +11,7 @@ struct EventEntry<T: Debug> {
     pub datetime: DateTime<Utc>,
     pub event: T,
 }
+
 #[derive(Debug)]
 pub struct Recorder {
     capacity:   usize,
