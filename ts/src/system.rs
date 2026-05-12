@@ -49,8 +49,6 @@ pub async fn run(config: Arc<Config>) -> io::Result<()> {
 
     let (producer_kill_tx, producer_kill_rx) = watch::channel(());
 
-    task::spawn_blocking(f);
-
     // start loop
     let mut id_counter = 0;
     loop {

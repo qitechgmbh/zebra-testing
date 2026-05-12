@@ -5,25 +5,16 @@ edition = "2024"
 
 [dependencies]
 telemetry-core = { path = "../telemetry-events" }
-overseer = { path = "../overseer" }
 
 chrono="0.4.44"
 duckdb={ version = "1.0.0" }
 
-anyhow="1.0.102"
-postcard="1.1.3"
-serde="1.0.228"
-serde_yaml = "0.9"
-
 heapless={ version = "0.9.1", features = [] }
 
-actix="0.13.5"
 arrow="58.2.0"
-crossbeam="0.8.4"
 httparse="1.10.1"
-signal-hook = "0.3"
 
 bytes="1.11.1"
-futures="0.3.32"
+# futures="0.3.32"
 
 tokio={version="1.52.2", features = ["full"]}

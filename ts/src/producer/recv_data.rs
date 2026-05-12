@@ -2,8 +2,6 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use bytes::Bytes;
 
-use telemetry_core::FRAME_SIZE_MAX;
-
 use crate::stream::ExitCondition;
 use crate::types::CompleteReason;
 use super::types::{Stream, Result, CompleteReasonCustom};
@@ -13,7 +11,7 @@ pub async fn run(
     validate: fn(&[u8]) -> bool,
     out_tx: broadcast::Sender<Bytes>,
 ) -> Result {
-    let mut buf = [0u8; FRAME_SIZE_MAX];
+    let mut buf = [0u8; 512];
 
     loop {
         let len = stream.read_u32(ExitCondition::Shutdown).await? as usize;

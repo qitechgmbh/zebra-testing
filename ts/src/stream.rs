@@ -1,13 +1,16 @@
 use std::{fmt::Debug, io::ErrorKind, time::Duration};
 
 use tokio::{
-    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, BufStream}, 
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufStream}, 
     select, 
     sync::watch, 
     time::timeout
 };
 
-use crate::types::CompleteReason;
+use crate::types::ClientExitReason;
+
+pub type UnixStream = Stream<tokio::net::UnixStream>;
+pub type TcpStream  = Stream<tokio::net::TcpStream>;
 
 pub struct Stream<R: AsyncRead + Unpin> {
     inner:   BufStream<R>,
@@ -20,10 +23,29 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
         Self { inner, exit_rx }
     }
 
+    pub async fn read<'a>(
+        &mut self, 
+        buf: &'a mut [u8],
+        exit_condition: ExitCondition
+    ) -> Result<usize, ClientExitReason> {
+        let fut = self.inner.read(buf);
+        let exec_res = Self::execute(&mut self.exit_rx, exit_condition, fut).await;
+
+        let result = match exec_res {
+            Ok(v) => v,
+            Err(status) => return Err(status),
+        };
+
+        match result {
+            Ok(len) => Ok(len),
+            Err(e) => Err(ClientExitReason::IoFailure(e)),
+        }
+    }
+
     pub async fn read_line<C: Send + Debug>(
         &mut self, 
         exit_condition: ExitCondition
-    ) -> Result<String, CompleteReason<C>> {
+    ) -> Result<String, ClientExitReason> {
         let mut buf = String::new();
 
         let fut = self.inner.read_line(&mut buf);
@@ -36,7 +58,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
 
         match result {
             Ok(_) => Ok(buf),
-            Err(e) => Err(CompleteReason::IoFailure(e)),
+            Err(e) => Err(ClientExitReason::IoFailure(e)),
         }
     }
 
@@ -44,7 +66,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
         &mut self, 
         buf: &mut [u8],
         exit_condition: ExitCondition
-    ) -> Result<(), CompleteReason<C>> {
+    ) -> Result<(), ClientExitReason> {
         let fut = self.inner.read_exact(buf);
         let exec_res = Self::execute(&mut self.exit_rx, exit_condition, fut).await;
 
@@ -56,16 +78,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
         match result {
             Ok(_) => Ok(()),
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                Err(CompleteReason::ClientDisconnected)
+                Err(ClientExitReason::Disconnected)
             }
-            Err(e) => Err(CompleteReason::IoFailure(e)),
+            Err(e) => Err(ClientExitReason::IoFailure(e)),
         }
     }
 
     pub async fn read_u32<C: Send + Debug>(
         &mut self, 
         exit_condition: ExitCondition
-    ) -> Result<u32, CompleteReason<C>> {
+    ) -> Result<u32, ClientExitReason> {
         let fut = self.inner.read_u32();
         let exec_res = Self::execute(&mut self.exit_rx, exit_condition, fut).await;
 
@@ -77,19 +99,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
         match result {
             Ok(v) => Ok(v),
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                Err(CompleteReason::ClientDisconnected)
+                Err(ClientExitReason::Disconnected)
             }
-            Err(e) => Err(CompleteReason::IoFailure(e)),
+            Err(e) => Err(ClientExitReason::IoFailure(e)),
         }
     }
 
-    async fn execute<C, F, T>(
+    async fn execute<F, T>(
         exit_rx: &mut watch::Receiver<()>,
         exit_condition: ExitCondition, 
         f: F
-    ) -> Result<T, CompleteReason<C>>
+    ) -> Result<T, ClientExitReason>
     where
-        C: Debug + Send,
         F: Future<Output = T>,
     {
         match exit_condition {
@@ -106,61 +127,80 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
         }
     }
 
-    async fn execute_expiring<C, F, T>(
+    async fn execute_expiring<F, T>(
         duration: Duration,
         f: F,
-    ) -> Result<T, CompleteReason<C>>
+    ) -> Result<T, ClientExitReason>
     where
-        C: Debug + Send,
         F: Future<Output = T>,
     {
         match timeout(duration, f).await {
             Ok(value) => Ok(value),
-            Err(_) => Err(CompleteReason::Timeout),
+            Err(_) => Err(ClientExitReason::Timeout),
         }
     }
 
-    async fn execute_terminating<C, F, T>(
+    async fn execute_terminating<F, T>(
         exit_rx: &mut watch::Receiver<()>,
         f: F,
-    ) -> Result<T, CompleteReason<C>>
+    ) -> Result<T, ClientExitReason>
     where
-        C: Debug + Send,
         F: Future<Output = T>,
     {
         select! {
             biased;
 
             _ = exit_rx.changed() => {
-                Err(CompleteReason::Shutdown)
+                Err(ClientExitReason::Shutdown)
             }
 
             value = f => { Ok(value) }
         }
     }
 
-    async fn execute_terminating_or_expiring<C, F, T>(
+    async fn execute_terminating_or_expiring<F, T>(
         exit_rx: &mut watch::Receiver<()>,
         duration: Duration,
         f: F,
-    ) -> Result<T, CompleteReason<C>>
+    ) -> Result<T, ClientExitReason>
     where
-        C: Debug + Send,
+
         F: Future<Output = T>,
     {
         select! {
             biased;
 
             _ = exit_rx.changed() => {
-                Err(CompleteReason::Shutdown)
+                Err(ClientExitReason::Shutdown)
             }
 
             res = timeout(duration, f) => { 
                 match res {
                     Ok(value) => Ok(value),
-                    Err(_) => Err(CompleteReason::Timeout),
+                    Err(_) => Err(ClientExitReason::Timeout),
                 }
             }
+        }
+    }
+}
+
+impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
+    pub async fn write_all(
+        &mut self,
+        buf: &[u8],
+        exit_condition: ExitCondition
+    ) -> Result<(), ClientExitReason> {
+        let fut = self.inner.write_all(buf);
+        let exec_res = Self::execute(&mut self.exit_rx, exit_condition, fut).await;
+
+        let result = match exec_res {
+            Ok(v) => v,
+            Err(status) => return Err(status),
+        };
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(ClientExitReason::IoFailure(e)),
         }
     }
 }

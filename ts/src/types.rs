@@ -27,3 +27,15 @@ pub enum CompleteReason<Custom: Debug> {
     IoFailure(io::Error),
     JoinFailure(JoinError),
 }
+
+#[derive(Debug)]
+pub enum ClientExitReason {
+    Timeout,
+    Shutdown,
+    Disconnected,
+    IoFailure(io::Error),
+    JoinFailure(JoinError),
+}
+
+pub type ClientTaskResult<T> = std::result::Result<T, ClientExitReason>;
+pub type ClientTask<T> = tokio::task::JoinHandle<ClientTaskResult<T>>;

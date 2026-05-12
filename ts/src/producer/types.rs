@@ -9,6 +9,7 @@ pub enum State {
     RecvPort,
     RecvData,
     SendRefuse,
+    SendExit,
 }
 
 #[derive(Debug)]
