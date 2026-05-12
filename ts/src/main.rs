@@ -1,22 +1,24 @@
+use std::io;
+
 mod config;
 use config::Config;
 
-mod overseer;
 mod types;
+mod stream;
+
+mod machines;
+mod producer;
+mod consumer;
+
 mod system;
-mod router;
-mod ingest;
-mod recorder;
-mod recorders;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let config = Config::default();
-    println!("Loaded Config: {:?}", &config);
+async fn main() -> io::Result<()> {
+    let config = Config::testing();
+    println!("Loaded Config");
 
+    println!("Starting System...");
     system::run(config).await?;
 
     Ok(())
 }
-
-// recorders: task that receives vecu8 just box it??

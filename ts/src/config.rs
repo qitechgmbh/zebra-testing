@@ -1,29 +1,36 @@
 use std::{
-    env::{VarError, var},
-    str::FromStr, sync::Arc,
+    collections::HashMap, env::{VarError, var}, str::FromStr, sync::Arc
 };
 use anyhow::anyhow;
-use telemetry_core::MachineDataSchemas;
+
+use crate::machines::{MachineEntry, SCALES_S0};
+// use telemetry_core::MachineDataSchemas;
 
 #[derive(Debug)]
 pub struct Config {
-    pub db_path: String,
+    pub db_path:   String,
     pub sock_path: String,
 
     pub tcp_ipv4: String,
     pub tcp_port: u16,
 
-    pub machines: Vec<(String, MachineDataSchemas)>,
+    pub record_capacity: usize,
+
+    pub machines: HashMap<String, MachineEntry>,
 }
 
 impl Config {
-    pub fn default() -> Arc<Self> {
+    pub fn testing() -> Arc<Self> {
+        let mut machines = HashMap::new();
+        machines.insert("scales_ff01".into(), SCALES_S0);
+
         let instance = Self {
             db_path:   "idk".into(),
             sock_path: "/tmp/qitech-telemetry.sock".into(),
             tcp_port:  9000,
             tcp_ipv4:  "0.0.0.0".into(),
-            machines:  vec![("scales_ff01".into(), MachineDataSchemas::ScalesS0)]
+            machines:  machines,
+            record_capacity: 1024 * 1024,
         };
 
         Arc::new(instance)

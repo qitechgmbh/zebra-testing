@@ -1,246 +1,159 @@
-use std::{ collections::HashMap, io, sync::Arc };
-
+use std::{collections::HashMap, io, sync::Arc};
 use bytes::Bytes;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream, UnixListener, UnixStream}, select, signal, spawn, sync::{broadcast, mpsc::{self, Sender}, watch}, task::JoinHandle 
+    select, signal::{self, unix::Signal}, spawn, sync::{broadcast, mpsc, watch}, task::{self, JoinHandle}
 };
 
-use crate::{config::Config, types::MachineDataSchema};
+use crate::{config::Config, producer, types::SystemEvent};
 
-
-// ingest broadcasts message, recorder saves data into WAL, finally tell system to 
-// write data into database. All it does it the system is: hey please commit 
-// new batch into database. When recorder is started it checks for existing wal -> 
-// notify system to write the batch
-
-// all database operations through system. Recorder is essential for storing data
-
-#[derive(Debug)]
-pub enum SystemAction {
-    SpawnUnixRouter(UnixStream),
-    SpawnUnixIngest(UnixStream, String),
-    SpawnTcpRouter(TcpStream),
-
-    // endpoint, 
-    WriteBatch(String, ),
-
-    // terminates all tasks that use that database
-    // closes all connections to the database
-    // then try to open the database again -> init tables
-    // then spawn the recorder
-    // ReloadDatabase(),
-
-    // SpawnRecorder(),
-    // SpawnIngest(UnixStream),
-    // SpawnRouter(TcpStream),
-    // SpawnLive(TcpStream),
-    // SpawnQuery(TcpStream),
+pub struct ProducerEntry {
+    state:  producer::State,
+    handle: JoinHandle<()>,
 }
 
-pub struct System {
-    registry: HashMap<String, RegistryEntry>,
-}
-
-// combine ingest + recording into one ?
-// so we would only have to push data to live listeners
-
-// ingest depends on db then
-
-pub struct RegistryEntry {
-    schema:   MachineDataSchema,
-    event_tx: broadcast::Sender<Bytes>,
-    event_rx: broadcast::Receiver<Bytes>,
-    ingest:   u32,
-    recorder: u32,
+pub struct MachineEntry {
+    // schema:      MachineEntry,
+    event_tx:    broadcast::Sender<Bytes>,
+    event_rx:    broadcast::Receiver<Bytes>,
+    producer_id: Option<u64>,
+    recorder_id: Option<u64>,
 }
 
 pub async fn run(config: Arc<Config>) -> io::Result<()> {
-    use signal::unix::signal;
-    use signal::unix::SignalKind;
+    let (mut sigterm, mut sigint) = create_signals()?;
 
-    let mut sigterm = signal(SignalKind::terminate())?;
-    let mut sigint  = signal(SignalKind::interrupt())?;
+    // system event channels
+    let (sys_tx, mut sys_rx) = mpsc::channel::<SystemEvent>(128);
 
-    // system channels
-    let (tx, mut rx) = mpsc::channel::<SystemAction>(128);
+    // machine registry
+    let mut machine_registry = HashMap::<&'static str, MachineEntry>::new();
+    for (name, schema) in &config.machines {
+        let (event_tx, event_rx) = broadcast::channel::<Bytes>(512);
+        // machine_registry.insert(name, MachineEntry {
+        //     schema: *schema,
+        //     event_tx,
+        //     event_rx,
+        //     producer_id: None,
+        //     recorder_id: None,
+        // });
+    }
 
-    // Deploy termination signal hooks
-    start_signal_handler(tx.clone())?;
-    println!("Signal Hooks engaged");
 
-    let unix_listener = spawn(run_unix_listener(config.clone(), tx.clone()));
-    let tcp_listener  = spawn(run_tcp_listener(config.clone(), tx.clone()));
+    // init producer stuff
+    let mut producer_registry = HashMap::<u64, ProducerEntry>::new();
 
-    let (router_shutdown_tx, router_shutdown_rx) = watch::channel(());
-    let mut routers = Vec::<JoinHandle<io::Result<()>>>::new();
-    // router.push(value);
+    let producer_listener = producer::Listener::new(
+        config.clone(),
+        sys_tx.clone()
+    ).await?;
 
-    // start event loop
+    let (producer_kill_tx, producer_kill_rx) = watch::channel(());
+
+    task::spawn_blocking(f);
+
+    // start loop
+    let mut id_counter = 0;
     loop {
-        let action = select! {
+        let event = select! {
             biased;
 
             _ = sigterm.recv() => { break; }
             _ = sigint.recv()  => { break; }
-            action = rx.recv() => {
-                action.expect("tx may not be dropped")
+            opt = sys_rx.recv() => {
+                opt.expect("tx/rx share lifetime")
             }
         };
 
-        println!("Received action: {action:?}");
+        match event {
+            SystemEvent::ProducerAccepted(raw_stream) => {
+                use producer::{State, Stream, recv_port, execute};
 
-        match action {
-            SystemAction::SpawnUnixRouter(stream) => {
-                let task   = run_unix_router(router_shutdown_rx.clone(), stream);
-                let handle = spawn(task);
-                routers.push(handle);
+                let id = id_counter;
+                id_counter += 1;
+
+                assert!(!producer_registry.contains_key(&id));
+                println!("Producer Accepted and registered with Id: {id}");
+                
+                let stream = Stream::new(raw_stream, producer_kill_rx.clone());
+                let task   = recv_port::run(stream);
+                let handle = spawn(execute(sys_tx.clone(), id, task));
+
+                producer_registry.insert(
+                    id, 
+                    ProducerEntry { 
+                        state: State::RecvPort, 
+                        handle
+                    }
+                );
             }
 
-            SystemAction::SpawnUnixIngest(stream, endpoint) => {
+            SystemEvent::ProducerStateChanged(id, transition) => {
+                use producer::{NextState, execute, recv_data};
 
+                let entry = producer_registry.get_mut(&id).expect("Must exist");
+                assert!(entry.handle.is_finished());
+
+                let old_state = entry.state;
+
+                match transition.next {
+                    NextState::RecvData(machine) => {
+                        if machine != "scales_ff01" {
+                            let task   = recv_data::run(stream);
+                            let handle = spawn(execute(sys_tx.clone(), id, task));
+                        }
+
+                        // entry.state = State::RecvData;
+                        // let task   = recv_data::run(stream);
+                        // let handle = spawn(execute(sys_tx.clone(), id, task));
+                    }
+                }
+
+                println!(
+                    "State Transitioned for Producer({id}) from {:?} to {:?}",
+                    old_state, entry.state
+                );
             }
 
-            SystemAction::SpawnTcpRouter(stream) => {
-
-            }
-
-            SystemAction::WriteBatch(_) => {
-
+            SystemEvent::ProducerCompleted(id, reason) => {
+                println!("Producer {id} completed. Reason: {:?}", reason);
+                let opt = producer_registry.remove(&id);
+                assert!(opt.is_some());
             }
         }
     }
 
-    println!("System shutdown started");
+    println!("Shutting down producer listener...");
+    producer_listener.stop().await;
 
-    println!("Stopping unix listener");
-    unix_listener.abort();
+    println!("Shutting down consumer listener...");
+    // consumer_listener.stop().await;
 
-    println!("Stopping tcp listener");
-    tcp_listener.abort();
+    println!("Shutting down producers...");
+    producer_kill_tx.send(()).expect("rx/tx share lifetime");
 
-    println!("Terminating Routers");
-    router_shutdown_tx.send(()).expect("rx shares lifetime with tx");
+    for (id, entry) in producer_registry.drain() {
+        if let Err(e) = entry.handle.await {
+            // we should never cancel this, so ensure we never do
+            assert!(!e.is_cancelled());
+            eprintln!("Supervisor for Producer {id} panicked! {e}");
+        }
+    }
 
-    println!("System shutdown complete");
+    println!("Shutting down recorder...");
+    // TODO:
+
+    println!("Shutting down consumers...");
+    // TODO:
 
     Ok(())
 }
 
-fn start_signal_handler(tx: Sender<SystemAction>) -> io::Result<()> {
-    use signal::unix::signal;
+fn create_signals() -> io::Result<(Signal, Signal)> {
     use signal::unix::SignalKind;
+    use signal::unix::signal;
 
-    let mut sigterm = signal(SignalKind::terminate())?;
-    let mut sigint  = signal(SignalKind::interrupt())?;
-
-    spawn(async move {
-        select! {
-            _ = sigterm.recv() => {
-                let _ = tx.send(SystemAction::Shutdown).await;
-            }
-            _ = sigint.recv() => {
-                let _ = tx.send(SystemAction::Shutdown).await;
-            }
-        }
-    });
-
-    Ok(())
-}
-
-pub async fn run_tcp_listener(config: Arc<Config>, tx: Sender<SystemAction>) -> io::Result<()> {
-    let listener = TcpListener::bind((config.tcp_ipv4.as_str(), config.tcp_port)).await?;
-
-    loop {
-        let stream = match listener.accept().await {
-            Ok((stream, _)) => stream,
-            Err(e) => {
-                eprintln!("Failed to Accept Tcp connection: {e}");
-                continue;
-            },
-        };
-
-        tx.send(SystemAction::SpawnTcpRouter(stream)).await
-            .expect("rx shares lifetime with tx");
-    }
-}
-
-pub async fn run_unix_listener(config: Arc<Config>, tx: Sender<SystemAction>) -> io::Result<()> {
-    let listener = UnixListener::bind(&config.sock_path)?;
-
-    loop {
-        let stream = match listener.accept().await {
-            Ok((stream, _)) => stream,
-            Err(e) => {
-                eprintln!("Failed to Accept Unix connection: {e}");
-                continue;
-            },
-        };
-
-        tx.send(SystemAction::SpawnUnixRouter(stream)).await
-            .expect("rx shares lifetime with tx");
-    }
-}
-
-pub async fn run_unix_router(
-    mut shutdown_rx: watch::Receiver<()>,
-    mut stream: UnixStream, 
-) -> io::Result<()> {
-    let mut buf = [0u8; 512];
-
-    let len = select! {
-        biased;
-
-        _ = shutdown_rx.changed() => {
-            // abort if shutdown signal received
-            return Ok(());
-        }
-
-        len = stream.read_u32() => {
-            len? as usize
-        }
-    };
-
-    stream.read_exact(&mut buf[..len]).await?;
-
-    let data = &buf[..len];
-
+    let sigterm = signal(SignalKind::terminate())?;
+    let sigint  = signal(SignalKind::interrupt())?;
     
-
-    //TODO: check if registry contains such endpoint, if not send message
-
-    // TODO: spawn ingest + recorder pipeline
-
-    Ok(())
-}
-
-pub enum UnixRejectReason {
-    NoSuchEndpoint,
-    EndpointOccupied,
-}
-
-pub async fn run_unix_reject(
-    mut stream: UnixStream, 
-    endpoint:   Arc<String>,
-    reason:     UnixRejectReason
-) -> io::Result<()> {
-    match reason {
-        UnixRejectReason::NoSuchEndpoint => {
-            stream.write_all(b"NoSuchEndpoint").await?;
-            stream.write_all(endpoint.as_bytes()).await?;
-        }
-
-        UnixRejectReason::EndpointOccupied => {
-            stream.write_all(b"Occupied").await?;
-            stream.write_all(endpoint.as_bytes()).await?;
-        }
-    }
-
-    Ok(())
-}
-
-// Overseer -> checks for dead tasks and tells system to restart them if necessary
-
-pub enum IOTaskState {
-    Idle,
-    Processing,
+    Ok((sigterm, sigint))
 }
