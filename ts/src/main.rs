@@ -1,5 +1,6 @@
 use std::io;
 
+mod client;
 mod config;
 use config::Config;
 

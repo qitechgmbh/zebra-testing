@@ -4,7 +4,7 @@ use crate::{consumer::{MachineRoute, Route, SystemRoute}, stream::{ExitCondition
 use super::super::{types::RecvRequestError};
 
 pub async fn run(mut stream: TcpStream) -> ClientTaskResult<Result<Route, RecvRequestError>> {
-    let mut buf     = [0u8; 4096];
+    let mut buf = [0u8; 4096];
 
     loop {
         let len = stream.read(&mut buf, ExitCondition::Shutdown).await?;
